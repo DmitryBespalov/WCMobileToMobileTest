@@ -8,29 +8,78 @@
 
 import UIKit
 import Foundation
-
+import Starscream
+import LocalAuthentication
 
 class ShareViewController: UIViewController {
 
+    var socket: WebSocket!
+    var context: LAContext!
 
     @IBAction func sendRequest(_ sender: Any) {
 
     }
-    //    override func isContentValid() -> Bool {
-//        // Do validation of contentText and/or NSExtensionContext attachments here
-//        return true
-//    }
-//
-//    override func didSelectPost() {
-//        // This is called after the user selects Post. Do the upload of contentText and/or NSExtensionContext attachments.
-//
-//        // Inform the host that we're done, so it un-blocks its UI. Note: Alternatively you could call super's -didSelectPost, which will similarly complete the extension context.
-//        self.extensionContext!.completeRequest(returningItems: [], completionHandler: nil)
-//    }
-//
-//    override func configurationItems() -> [Any]! {
-//        // To add configuration options via table cells at the bottom of the sheet, return an array of SLComposeSheetConfigurationItem here.
-//        return []
-//    }
+
+    func faceID() {
+        context = LAContext()
+        context.localizedCancelTitle = "Enter thing"
+        var canError: NSError?
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &canError) {
+            let reason = "Log in"
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { (success, error) in
+                if success {
+                    print("Auth success!")
+                } else {
+                    print(error?.localizedDescription ?? "can't auth")
+                }
+            }
+        } else {
+            print(canError?.localizedDescription ?? "can't eval")
+        }
+    }
+
+    func websocket() {
+        guard let ctx = extensionContext, let item = ctx.inputItems.first as? NSExtensionItem,
+            let attachment = item.attachments?.first else { return }
+        attachment.loadItem(forTypeIdentifier: "public.url", options: nil) { [unowned self] (data, error) in
+            if let error = error {
+                print(error)
+                return
+            }
+            guard let url = data as? URL else {
+                print("can't convert to url")
+                return
+            }
+            self.connect(to: url)
+        }
+    }
+
+    func connect(to url: URL) {
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        guard let bridgeURLString = comps?.queryItems?.first(where: { $0.name == "bridge" })?.value,
+            let bridgeURL = URL(string: bridgeURLString) else { return }
+        print(bridgeURL)
+
+        socket = WebSocket(url: bridgeURL)
+
+        //websocketDidConnect
+        socket.onConnect = {
+            print("websocket is connected")
+        }
+        //websocketDidDisconnect
+        socket.onDisconnect = { (error: Error?) in
+            print("websocket is disconnected: \(error?.localizedDescription ?? "<error>")")
+        }
+        //websocketDidReceiveMessage
+        socket.onText = { (text: String) in
+            print("got some text: \(text)")
+        }
+        //websocketDidReceiveData
+        socket.onData = { (data: Data) in
+            print("got some data: \(data.count)")
+        }
+        //you could do onPong as well.
+        socket.connect()
+    }
 
 }
